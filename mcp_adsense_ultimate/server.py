@@ -26,13 +26,36 @@ class MCPAdSenseEnhancedUltimateServer:
         print(f"   📊 账户ID: {self.account_id if self.account_id else '未设置'}", file=sys.stderr)
         print("   🚀 增强版 - 完整AdSense功能支持!", file=sys.stderr)
 
+    def _get_credentials(self):
+        """获取Google认证凭据，优先使用GOOGLE_APPLICATION_CREDS环境变量指定的文件"""
+        try:
+            # 检查是否设置了GOOGLE_APPLICATION_CREDS环境变量
+            creds_path = os.getenv('GOOGLE_APPLICATION_CREDS')
+            if creds_path and os.path.exists(creds_path):
+                print(f"✅ 使用指定的认证文件: {creds_path}", file=sys.stderr)
+                credentials = service_account.Credentials.from_service_account_file(
+                    creds_path,
+                    scopes=[
+                        "https://www.googleapis.com/auth/adsense.readonly",
+                        "https://www.googleapis.com/auth/adsense"
+                    ]
+                )
+                return credentials, None
+            else:
+                # 如果没有设置环境变量或文件不存在，使用默认的Application Default Credentials
+                print("⚠️ 未设置GOOGLE_APPLICATION_CREDS环境变量，使用默认认证", file=sys.stderr)
+                return default(scopes=[
+                    "https://www.googleapis.com/auth/adsense.readonly",
+                    "https://www.googleapis.com/auth/adsense"
+                ])
+        except Exception as e:
+            print(f"❌ 认证失败: {str(e)}", file=sys.stderr)
+            raise ValueError(f"无法获取认证凭据: {str(e)}")
+
     def _get_adsense_service(self):
         """获取AdSense API服务对象"""
         try:
-            credentials, project = default(scopes=[
-                "https://www.googleapis.com/auth/adsense.readonly",
-                "https://www.googleapis.com/auth/adsense"
-            ])
+            credentials, project = self._get_credentials()
             service = build('adsense', 'v2', credentials=credentials)
             return service
         except Exception as e:
