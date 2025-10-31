@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from google.auth import default
+from google.oauth2.credentials import Credentials as UserCredentials
 
 class MCPAdSenseEnhancedUltimateServer:
     """Google AdSense 增强终极优化版MCP服务器"""
@@ -27,29 +28,80 @@ class MCPAdSenseEnhancedUltimateServer:
         print("   🚀 增强版 - 完整AdSense功能支持!", file=sys.stderr)
 
     def _get_credentials(self):
-        """获取Google认证凭据，优先使用GOOGLE_APPLICATION_CREDS环境变量指定的文件"""
+        """获取Google认证凭据，支持service_account和authorized_user两种类型"""
         try:
-            # 检查是否设置了GOOGLE_APPLICATION_CREDS环境变量
-            creds_path = os.getenv('GOOGLE_APPLICATION_CREDS')
+            # 优先使用标准的GOOGLE_APPLICATION_CREDENTIALS，兼容GOOGLE_APPLICATION_CREDS
+            creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS') or os.getenv('GOOGLE_APPLICATION_CREDS')
+            
             if creds_path and os.path.exists(creds_path):
                 print(f"✅ 使用指定的认证文件: {creds_path}", file=sys.stderr)
-                credentials = service_account.Credentials.from_service_account_file(
-                    creds_path,
-                    scopes=[
-                        "https://www.googleapis.com/auth/adsense.readonly",
-                        "https://www.googleapis.com/auth/adsense"
-                    ]
-                )
-                return credentials, None
+                
+                # 读取凭证文件以确定类型
+                with open(creds_path, 'r') as f:
+                    creds_data = json.load(f)
+                
+                cred_type = creds_data.get('type')
+                
+                # 根据类型选择不同的认证方式
+                if cred_type == 'service_account':
+                    print("   📋 检测到 Service Account 凭证", file=sys.stderr)
+                    credentials = service_account.Credentials.from_service_account_file(
+                        creds_path,
+                        scopes=[
+                            "https://www.googleapis.com/auth/adsense.readonly",
+                            "https://www.googleapis.com/auth/adsense"
+                        ]
+                    )
+                    return credentials, None
+                elif cred_type == 'authorized_user':
+                    print("   👤 检测到 OAuth 用户凭证", file=sys.stderr)
+                    credentials = UserCredentials.from_authorized_user_file(
+                        creds_path,
+                        scopes=[
+                            "https://www.googleapis.com/auth/adsense.readonly",
+                            "https://www.googleapis.com/auth/adsense"
+                        ]
+                    )
+                    return credentials, None
+                else:
+                    # 尝试自动检测类型（向后兼容）
+                    print(f"   ⚠️ 未识别的凭证类型: {cred_type}，尝试使用 service account 方式", file=sys.stderr)
+                    try:
+                        credentials = service_account.Credentials.from_service_account_file(
+                            creds_path,
+                            scopes=[
+                                "https://www.googleapis.com/auth/adsense.readonly",
+                                "https://www.googleapis.com/auth/adsense"
+                            ]
+                        )
+                        return credentials, None
+                    except:
+                        # 如果失败，尝试用户凭证方式
+                        credentials = UserCredentials.from_authorized_user_file(
+                            creds_path,
+                            scopes=[
+                                "https://www.googleapis.com/auth/adsense.readonly",
+                                "https://www.googleapis.com/auth/adsense"
+                            ]
+                        )
+                        return credentials, None
             else:
                 # 如果没有设置环境变量或文件不存在，使用默认的Application Default Credentials
-                print("⚠️ 未设置GOOGLE_APPLICATION_CREDS环境变量，使用默认认证", file=sys.stderr)
-                return default(scopes=[
+                if not creds_path:
+                    print("⚠️ 未设置GOOGLE_APPLICATION_CREDENTIALS或GOOGLE_APPLICATION_CREDS环境变量，尝试使用默认认证", file=sys.stderr)
+                else:
+                    print(f"⚠️ 指定的认证文件不存在: {creds_path}，尝试使用默认认证", file=sys.stderr)
+                
+                credentials, project = default(scopes=[
                     "https://www.googleapis.com/auth/adsense.readonly",
                     "https://www.googleapis.com/auth/adsense"
                 ])
+                return credentials, project
         except Exception as e:
             print(f"❌ 认证失败: {str(e)}", file=sys.stderr)
+            print(f"   请确保设置了正确的GOOGLE_APPLICATION_CREDENTIALS或GOOGLE_APPLICATION_CREDS环境变量", file=sys.stderr)
+            print(f"   并且文件路径正确且文件存在", file=sys.stderr)
+            print(f"   支持的凭证类型: service_account 或 authorized_user", file=sys.stderr)
             raise ValueError(f"无法获取认证凭据: {str(e)}")
 
     def _get_adsense_service(self):
